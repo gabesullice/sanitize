@@ -1,0 +1,84 @@
+<?php
+
+/**
+ * @file Contains custom work for the sanitize module.
+ */
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Add JS to warn the user that they may be submitting sensitve information.
+ */
+function sanitize_form_contact_entityform_edit_form_alter(&$form, $form_state) {
+  // Add a client-side validation for possible private info.
+  $module_dir = drupal_get_path('module', 'sanitize');
+  $form['#attached']['js'] = array(
+    $module_dir . '/js/sanitize.js',
+  );
+  //
+  // In case JS is not enabled, set a server side validator.
+  $form['#validate'][] = 'sanitize_form_contact_entityform_edit_form_validate';
+}
+
+/**
+ * Validates the contact form.
+ */
+function sanitize_form_contact_entityform_edit_form_validate(&$form, &$form_state) {
+  $checkable = sanitize_get_check_fields($form_state['values']);
+
+  $has_possible_private_value = array_filter(
+    $checkable,
+    'sanitize_value_contains_private_number'
+  );
+
+  if (!empty($has_possible_private_value)) {
+    // For every probably private input, set a warning.
+    array_walk($has_possible_private_value, function ($value, $field_name) {
+      form_set_error(
+        $field_name,
+        "We're concerned that you may have entered some private information in this field, like your CARD number or Social Security number. If so, please remove it."
+      );
+    });
+  }
+}
+
+/**
+ * Returns the form field names to check for private data.
+ */
+function sanitize_get_check_fields($form_values) {
+  // Filter function to get possible field names to check.
+  $filter_field_names = function ($key) {
+    // Only grab input fields and not field_phone.
+    return (preg_match('/^field_/', $key) && $key != 'field_phone');
+  };
+
+  // Gets an array of field_names to check.
+  $field_names = array_filter(array_keys($form_values), $filter_field_names);
+
+  // Plucks only the fields to check out of the possible form values.
+  return array_intersect_key($form_values, array_flip($field_names));
+}
+
+/**
+ * Validates whether a string may contain a CCN or SSN.
+ */
+function sanitize_value_contains_private_number($value) {
+  $at_risk = FALSE;
+  // Takes an input and checks it for possible private data.
+  $matcher_func = function ($input) use (&$at_risk) {
+    $ssn_pattern = '/\d{3}[ \-.]?\d{2}[ \-.]?\d{4}\b/';
+    // @todo: This should probably be a more robust expression.
+    $ccn_pattern = '/\d{4}[ \-.]?\d{4}[ \-.]?\d{4}[ \-.]?\d{4}/';
+
+    // If the input might contain a risk, flag it.
+    if (preg_match($ssn_pattern, $input) || preg_match($ccn_pattern, $input)) {
+      $at_risk = TRUE;
+    }
+  };
+
+  // Values are nested in [und][n], this will visit all possible values.
+  array_walk_recursive($value, $matcher_func);
+
+  // Return whether we flagged any value as 'at risk';
+  return $at_risk;
+};

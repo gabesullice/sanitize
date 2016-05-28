@@ -1,0 +1,6 @@
+name = Sanitize
+description = Attempts to sanitize the contact form of SSNs and debit card numbers.
+core = 7.x
+package = custom
+
+dependencies[] = entityform
